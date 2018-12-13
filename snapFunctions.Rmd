@@ -112,7 +112,7 @@ snap_Point_to_Feature <- function(POINT, # sf POINT file
   return(b)
 }
 
-snap_Point_to_Feature(POINT, POINT_UID_colname, MULTILINESTRING, bufferDistances)
+snap_Point_to_Feature(probSites_sf[1,], 'StationID', WQS, seq(10,50, 5))
 ``` 
  
  
@@ -197,6 +197,8 @@ snap_Points_to_Feature_List2 <- function(MULTIPOINT, # sf MULTIPOINT file
                                   MULTILINESTRING, # stream network
                                   bufferDistances # distance to run buffer, this will be in
                                   ){              # the units of the MULTIPOINT and MULTILINESTRING files)
+  # Make a list to store the two types of results
+  out_list <- list(sf_output = list(), tbl_output = list() )
   
   # Don't love using a loop here but can't figure out better way at present
   for(i in 1:nrow(MULTIPOINT)) {
@@ -234,8 +236,14 @@ snap_Points_to_Feature_List2 <- function(MULTIPOINT, # sf MULTIPOINT file
 Run the function.
 
 ```{r listOutput}
+time1 <- Sys.time()
 testList <- snap_Points_to_Feature_List(probSites_sf,'StationID',WQS, seq(10,50,by=10))
+duration_testList <- Sys.time()-time1
+time1 <- Sys.time()
 testList2 <- snap_Points_to_Feature_List2(probSites_sf,'StationID',WQS, seq(10,50,by=10))
+duration_testList2 <- Sys.time()-time1
+
+saveRDS(testList,'data/testList.RDS')
 ```
 
 Now see what these look like.
