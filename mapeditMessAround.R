@@ -47,6 +47,7 @@ library(mapview)
 library(mapedit)
 library(tidyverse)
 library(sf)
+library(leaflet)
 
 WQS <- st_read('data/WQS2018_BRRO_albers_mini.shp')
 
@@ -70,11 +71,63 @@ snapCheck <- function(successDataFrame){
     filter(n()>1)
 }
 
-tooMany <- snapCheck(testList[['sf_output']] )
+tooMany <- snapCheck(testList[['sf_output']] ) %>%
+  st_transform(4326)# project to WGS84 for plotting
 
-siteWithTooMany <- filter(probSites_sf, StationID == unique(tooMany$`Point Unique Identifier`))
+
+siteWithTooMany <- filter(probSites_sf, StationID == unique(tooMany$`Point Unique Identifier`)) %>%
+  st_transform(4326)# project to WGS84 for plotting
 
 # mapedit tooMany
-fixedSites <- mapview(tooMany) +
-  mapview(siteWithTooMany) %>%
+
+
+fixedSites <- mapview(tooMany) %>%
+  editMap('tooMany')
+# works but man editing the feature and deleting all those vertices would be a pain!
+
+
+#fixedSites <- mapview(tooMany) +
+#  mapview(siteWithTooMany) %>%
+#  editMap("tooMany")
+
+# doesn't like mapview way of adding layers +
+
+
+# Try with leaflet addMarkers
+fixedSites <- mapview(tooMany) %>%
+  addMarkers(data=siteWithTooMany,~LongitudeD,~LatitudeDD,#~geometry[[1]][1],~geometry[[1]][1], 
+             popup = siteWithTooMany$StationID) %>%
+  editMap('tooMany')
+# Still doesn't like it
+
+
+
+# Make leaflet map to get desired results
+
+fixedSites <- leaflet(tooMany) %>% 
+  addProviderTiles(providers$Esri.NatGeoWorldMap,group='Nat Geo World Map') %>%
+  addProviderTiles(providers$Esri.WorldImagery,group='Esri World Imagery') %>%
+  addProviderTiles(providers$OpenStreetMap,group='Open Street Map') %>%
+  addPolylines(data=tooMany, group='WQS',
+               color = ~colorNumeric(c("red", "green", "blue",'yellow'),OBJECTID)(OBJECTID),
+               popup=popupTable(tooMany,zcol=c('Point Unique Identifier','Buffer Distance',
+                                               "WATER_NAME","BASIN","WQS_COMMEN","SEC","CLASS",
+                                               "SPSTDS",'SECTION_DE','Basin_Code','PWS','Trout',
+                                               'Edit_Date','StreamType','Tier_III'))) %>%
+  addMarkers(data=siteWithTooMany,~LongitudeD,~LatitudeDD,#~geometry[[1]][1],~geometry[[1]][1], 
+             popup = siteWithTooMany$StationID, group='point') %>%
+  addLayersControl(baseGroups=c('Nat Geo World Map','Esri World Imagery','Open Street Map'),
+                   overlayGroups = c('WQS','point'),
+                   options=layersControlOptions(collapsed=T),
+                   position='topleft') %>%
   editMap("tooMany")
+
+# the look I want but cannot edit any layers now...
+
+
+
+
+# Emma's Conclusion:
+# I love the idea of building in a feature (function) to package that quickly builds this interactive
+# map of sites with too many snaps and lets users delete the undesired snaps, but mapedit just
+# isn't there yet as a package
