@@ -1,0 +1,46 @@
+---
+title: "Snap Tool"
+author: "Emma Jones"
+date: "January 2, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# Run in R3.5.1
+
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+```
+
+This script demonstrates an initial workflow to retrieve attribute information from NHD flowlines. All analysis will comply with tidy data workflows. 
+
+### Initial Thoughts on Snapping Points to Lines
+
+**Background** 
+I built an S3 version of this workflow in ~2015 to snap VDEQ monitoring locations to a NHD polyline shapefile with embedded Water Quality Standards information. This process was an initial step in automating WQS assessment workflows throughout the state. After a few years of project stagnation, renewed interest in automating assessments came about in 2017 with increased shiny app acceptance within the agency. The goal of this snapping project is to develop a function that can take point information and associate the nearest line feature for extraction of attribute info. 
+
+**Why a new function?** 
+After thorough exploration of native sf snapping functions (sf::st_snap, sf::st_nearest_feature) I have determined that they do not fully meet needs for flow line applications. These functions only return the closest feature to an input point, which can mask errors in snapping to the 'correct' flow line. Though a number of lat/lng fall close enough to stream segments to use the above mentioned snapping functions, there are cases where a point falls close to 2+ flow lines. These require manual QA to identify where the point intended to snap to. By only returning the closest feature, these cases are masked from users and can potentially snap to incorrect stream segments. There is value in knowing how many segments are identified within a given buffer distance.
+
+### Snapping Functions that output Points
+
+These nested functions accomplish the task of taking input spreadsheet point data and snapping to nearest line segments. **This version of the functions output point(s) instead of a list of lines and points.** See snapFunctions.Rmd for previous iterations of snapping function.
+
+Bring in test dataset. I clipped a small bit of the WQS layer from New river basin for test NHD. The points are a few real and a few made up (I picked sites that would purposefully grab too many stream geometries) for testing. I made sure to start with a spreadsheet form to make sure the function will be most useful to people. The sf transformation steps can happen in an outer function and can build out something that tests incoming dataset and adjusts workflow accordingly.
+
+```{r newTestData}
+WQS <- st_read('data/WQS2018_BRRO_albers_mini.shp')
+
+probSites_xl <- read_csv('data/probSites_mini.csv')
+
+probSites_sf <- st_as_sf(probSites_xl, 
+                    coords = c("LongitudeD", "LatitudeDD"), # for point data
+                    remove = F, # don't remove these lat/lon cols from df
+                    crs = 4269) %>% # add projection, needs to be geographic for now bc entering lat/lng, 
+  st_transform( st_crs(WQS))# project to Albers equal area for snapping
+
+# make sure both layers have same CRS
+identical(st_crs(WQS),st_crs(probSites_sf))
+```

@@ -125,6 +125,12 @@ fixedSites <- leaflet(tooMany) %>%
 # the look I want but cannot edit any layers now...
 
 
+# Marc's code: can't edit features though
+fixedSites <- mapview (tooMany)%>%
+  
+  editMap("siteWithTooMany")
+
+
 
 
 # Emma's Conclusion:
