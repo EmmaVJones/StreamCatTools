@@ -44,3 +44,61 @@ probSites_sf <- st_as_sf(probSites_xl,
 # make sure both layers have same CRS
 identical(st_crs(WQS),st_crs(probSites_sf))
 ```
+
+
+Starting small, build first function that just buffers single site X distance and lets user know if there is a match with input polyline file. Still using my version of inner function because I don't want to test to see if a buffer intersects a stream, then re-grab that stream's unique identifier in a separate step. I think it makes more sense to just do the st_intersect once even though the apply() functionality is a tad faster, I would need to st_intersect twice to get out the info I need.
+
+
+```{r bufferFunction}
+# For testing
+POINT <- probSites_sf[1,]
+MULTILINESTRING <- WQS
+distance <- 40
+
+snap_bufferMethod <- function(POINT, MULTILINESTRING, distance){
+  step1 <- st_buffer(POINT,dist = distance)
+  st_zm(MULTILINESTRING) %>% 
+    filter(st_intersects(., st_zm(step1), sparse = FALSE))
+}
+
+snap_bufferMethod(probSites_sf[1,],WQS,5)
+snap_bufferMethod(probSites_sf[1,],WQS,40)
+```
+
+Then build outer function that accepts sequence of buffer distances for a single site.
+
+```{r buffer series}
+# For testing
+POINT <- probSites_sf[1,]
+MULTILINESTRING_UID_colname <- "OBJECTID"
+MULTILINESTRING <- WQS
+bufferDistances <- seq(10,50,by=10)
+
+snap_Point_to_Feature <- function(POINT, # sf POINT file
+                                  MULTILINESTRING, # stream network
+                                  MULTILINESTRING_UID_colname, # as.character(name of unique identifier in POINT file)
+                                  bufferDistances # numeric sequence of distances to run buffer, these will be in
+                                  ){              # the unit of the POINT and MULTILINESTRING files
+  
+   x <- 0
+  repeat {
+   x <- x + 1
+   b <- snap_bufferMethod(POINT,MULTILINESTRING,bufferDistances[x])
+   if (nrow(b) > 0 | x == length(bufferDistances)) break   }
+  
+  cn <- as.character(unique(st_set_geometry(b,NULL) %>% select_(MULTILINESTRING_UID_colname)))
+  
+  if( nrow(b) == 0 ){
+    c <- mutate(POINT, `MULTILINESTRING Unique Identifier` = NA,
+                `Buffer Distance` = paste('No connections within', max(bufferDistances),
+                                        st_crs(POINT)$units, sep = ' '))
+  } else {
+     c <- mutate(POINT,`MULTILINESTRING Unique Identifier` = cn,
+              `Buffer Distance` = paste(bufferDistances[x], 
+                                        st_crs(POINT)$units, sep = ' ')) }#%>%
+    #dplyr::select(`Point Unique Identifier`, `Buffer Distance`, everything())  }
+  return(c)
+}
+
+snap_Point_to_Feature(probSites_sf[1,], WQS, 'OBJECTID',  seq(10,50, 5))
+``` 
