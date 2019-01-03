@@ -69,7 +69,7 @@ Then build outer function that accepts sequence of buffer distances for a single
 
 ```{r buffer series}
 # For testing
-POINT <- probSites_sf[1,]
+POINT <- probSites_sf[4,]#probSites_sf[1,]#probSites_sf[5,]#
 MULTILINESTRING_UID_colname <- "OBJECTID"
 MULTILINESTRING <- WQS
 bufferDistances <- seq(10,50,by=10)
@@ -86,19 +86,32 @@ snap_Point_to_Feature <- function(POINT, # sf POINT file
    b <- snap_bufferMethod(POINT,MULTILINESTRING,bufferDistances[x])
    if (nrow(b) > 0 | x == length(bufferDistances)) break   }
   
-  cn <- as.character(unique(st_set_geometry(b,NULL) %>% select_(MULTILINESTRING_UID_colname)))
-  
+
   if( nrow(b) == 0 ){
     c <- mutate(POINT, `MULTILINESTRING Unique Identifier` = NA,
                 `Buffer Distance` = paste('No connections within', max(bufferDistances),
                                         st_crs(POINT)$units, sep = ' '))
   } else {
-     c <- mutate(POINT,`MULTILINESTRING Unique Identifier` = cn,
-              `Buffer Distance` = paste(bufferDistances[x], 
-                                        st_crs(POINT)$units, sep = ' ')) }#%>%
-    #dplyr::select(`Point Unique Identifier`, `Buffer Distance`, everything())  }
+       cn <- as.character(st_set_geometry(b,NULL) %>% select_(MULTILINESTRING_UID_colname) %>% flatten_chr())
+       c <- POINT %>%
+         slice(rep(1:n(), each = length(cn))) %>% # replicate rows of POINT file length(cn) times to mutate cn info
+         mutate(`MULTILINESTRING Unique Identifier` = cn,
+                   `Buffer Distance` = paste(bufferDistances[x], 
+                                             st_crs(POINT)$units, sep = ' ')) }
   return(c)
 }
 
 snap_Point_to_Feature(probSites_sf[1,], WQS, 'OBJECTID',  seq(10,50, 5))
 ``` 
+
+But if you want to make a dataset with sites that did connect to something and sites that didn't it causes problems in MULTILINESTRING object.
+
+```{r problemsIdentified}
+z1 <- snap_Point_to_Feature(probSites_sf[1,], WQS, 'OBJECTID', seq(10,50,by=10)) # one connection
+z3 <- snap_Point_to_Feature(probSites_sf[4,], WQS, 'OBJECTID', seq(10,50,by=10)) # three connections
+z0 <- snap_Point_to_Feature(probSites_sf[5,], WQS, 'OBJECTID', seq(10,50,by=10)) # no connection
+
+# Ideally we would combine them now to output to a user, but can't bc sf issues with bind_rows
+
+bind_rows(z1,z3,z0)
+```
