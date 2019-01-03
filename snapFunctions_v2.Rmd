@@ -114,98 +114,57 @@ z1 <- snap_Point_to_Feature(probSites_sf[1,], WQS, 'OBJECTID', seq(10,50,by=10))
 z3 <- snap_Point_to_Feature(probSites_sf[4,], WQS, 'OBJECTID', seq(10,50,by=10)) # three connections
 z0 <- snap_Point_to_Feature(probSites_sf[5,], WQS, 'OBJECTID', seq(10,50,by=10)) # no connection
 
-# Ideally we would combine them now to output to a user, but can't bc sf issues with bind_rows
-
 z4 <- suppressWarnings(bind_rows(z1,z3,z0) )
 z5 <- suppressWarnings(rbind(z1,z3,z0, deparse.level = 1)) 
+# clean up workspace
+rm(list=setdiff(ls(), c("probSites_sf", "probSites_xl", "snap_bufferMethod", "snap_Point_to_Feature", "WQS")))
+
 ```
 
 
-Now need to extend this to MULTIPOINT features so user can easily use with spreadsheet-like input. This function outputs a list with one sf object for things that connected to segment within buffer and one smaller tbl that identifies sites that need attention. I didn't love this initally, but I think it offers a somewhat elegant solution to the problem because a single sf output with sites that worked and ones that didn't would still need to be filtered to get rid of empty geometry rows before manipulating further.
+Now need to extend this to MULTIPOINT features so user can easily use with spreadsheet-like input. This function outputs a multipoint object with all sites that were initially fed to function. Buffer information and the UID of the line segment it attached to within said buffer is included with each point. If no lines are snapped to within a given buffer sequence, then the original point is returned with a comment about maximum buffer attempted without success. If multiple lines are returned within a given buffer for a single point, all lines will be returned with a comment on buffer distance that they fell within. Thus, the number of rows in the sf object returned will be at least the same number as fed into the function.
 
-Also, don't love the loop in the function, costly. Maybe a Jenny Bryan list solution could speed up processing here? leaving it at loop for now.
+Update: implement purrr::map() instead of loop to speed processing.
+
+```{r multipoint output}
+#MULTIPOINT <- probSites_sf
+#POINT_UID_colname <- 'StationID'
+#MULTILINESTRING_UID_colname <- "OBJECTID"
+#MULTILINESTRING <- WQS
+#bufferDistances <- seq(10,50,by=10)
 
 
-```{r multipoint with list output}
-
-snap_Points_to_Feature_List <- function(MULTIPOINT, # sf MULTIPOINT file
-                                  POINT_UID_colname, # as.character(name of unique identifier in POINT file)
-                                  MULTILINESTRING, # stream network
-                                  bufferDistances # numeric sequence of distances to run buffer, these will be in
-                                  ){              # the unit of the MULTIPOINT and MULTILINESTRING files)
-  # Make a list to store the two types of results
-  out_list <- list(sf_output = list(), tbl_output = list() )
+snap_Points_to_Feature <- function(MULTIPOINT, # sf MULTIPOINT file
+                                   MULTIPOINT_UID_colname, # as.character(name of unique identifier in POINT file)
+                                   MULTILINESTRING, # stream network
+                                   MULTILINESTRING_UID_colname, # as.character(name of unique identifier in POINT file)
+                                   bufferDistances # numeric sequence of distances to run buffer, these will be in
+                                   ){              # the unit of the MULTIPOINT and MULTILINESTRING files)
+  # get array of point column name
+  MULTIPOINT_UID <- MULTIPOINT[[MULTIPOINT_UID_colname]]
   
-  # Don't love using a loop here but can't figure out better way at present
-  for(i in 1:nrow(MULTIPOINT)) {
-    print(paste('Snapping Point ',i,' of ',nrow(MULTIPOINT), sep = ''))
-    z <- snap_Point_to_Feature(MULTIPOINT[i,], POINT_UID_colname, MULTILINESTRING, bufferDistances)
-    if("sf" %in% class(z)){
-      if( length(out_list$sf_output) == 0 ){
-        out_list$sf_output <- z
-      } else { 
-        out_list$sf_output <- suppressWarnings( out_list$sf_output <- rbind(out_list$sf_output,z) ) }
-    } else {
-      out_list$tbl_output <-  suppressWarnings( out_list$tbl_output %>% bind_rows(z) )
-    }
-  }
+  # apply function to all point features
+  z <- MULTIPOINT %>%
+    split(MULTIPOINT_UID) %>%
+    map( ~ snap_Point_to_Feature(.x, WQS, 'OBJECTID', seq(10,50,by=10))) #%>%
+  #bind_rows() %>% st_sf() # would like to pipe everything but need to get handsy with data if use bind_rows
+  # do.call provides same data structure as input without much effort, so two steps but better end product
+  # compared to a single pipe
   
-
-    
-  
-  
-  # Report Results
-  print('Use objectName$sf_output to view successful connections.')
-  print('Use objectName$tbl_output to view sites that did not connect to any segments within the input buffer distances.')
-  
-  return(out_list)
+  return(do.call(rbind,z))
 }
 
-```
+# clean up workspace, make sure functions really working after testing
+rm(list=setdiff(ls(), c("probSites_sf", "probSites_xl", "snap_bufferMethod", "snap_Point_to_Feature", "WQS",
+                        "snap_Points_to_Feature")))
 
-
-
-```{r multipoint with list output}
-
-snap_Points_to_Feature_List2 <- function(MULTIPOINT, # sf MULTIPOINT file
-                                  POINT_UID_colname, # as.character(name of unique identifier in POINT file)
-                                  MULTILINESTRING, # stream network
-                                  bufferDistances # distance to run buffer, this will be in
-                                  ){              # the units of the MULTIPOINT and MULTILINESTRING files)
-  # Make a list to store the two types of results
-  out_list <- list(sf_output = list(), tbl_output = list() )
-  
-  # Don't love using a loop here but can't figure out better way at present
-  for(i in 1:nrow(MULTIPOINT)) {
-    print(paste('Snapping Point ',i,' of ',nrow(MULTIPOINT), sep = ''))
-    z <- snap_Point_to_Feature(MULTIPOINT[i,], POINT_UID_colname, MULTILINESTRING, bufferDistances)
-    if("sf" %in% class(z)){
-      if (nrow(z) > 1){
-        y <- z %>%
-          dplyr::select(`Point Unique Identifier`,`Buffer Distance`)%>%
-          dplyr::slice(1) %>%
-          st_set_geometry(NULL)
-        out_list$tbl_output <- tibble(`Point Unique Identifier` = y$`Point Unique Identifier`,
-                    `Buffer Distance` = paste0('Multiple Connections within ',y$`Buffer Distance`))
-        
-      }
-      if (length(out_list$sf_output) == 0 ){
-        out_list$sf_output <- z
-      } else { 
-        out_list$sf_output <- suppressWarnings( out_list$sf_output <- rbind(out_list$sf_output,z) ) }
-    } else {
-      out_list$tbl_output <-  suppressWarnings( out_list$tbl_output %>% bind_rows(z) )
-    }
-  }
-
-    
-  
-  # Report Results
-  print('Use objectName$sf_output to view successful connections.')
-  print('Use objectName$tbl_output to view sites that did not connect to any segments within the input buffer distances.')
-  
-  return(out_list)
-}
+z <- snap_Points_to_Feature(probSites_sf, 'StationID', WQS, "OBJECTID", seq(10,50,by=10))
 
 ```
 
+Now all user needs to do is:
+1) z2 <- filter(z, !is.na(`MULTILINESTRING Unique Identifier`)) to get rid of super problem sites (will need to do hand QA on those sites
+2) left_join the z2 output to the original line file to get line segments of interest
+3) QA where > 1 line segment per point ... we can build more QA helpers as discussed on phone with string searches?
+
+Those steps could be wrapped into functions, but not sure if necessary? Might show a workflow in a vignette of how to deal with three potential cases and call it a day?
